@@ -2,7 +2,10 @@
 <html lang="km">
 <head>
     <meta charset="UTF-8">
-    <title>3D Arcade Soccer - Goalie AI Fix</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D Arcade Soccer - Online P2P & Bounce</title>
+    <!-- បញ្ចូល PeerJS Library សម្រាប់ Online Multiplayer -->
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <style>
         body {
             margin: 0;
@@ -13,55 +16,60 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
+            min-height: 100vh;
             overflow: hidden;
+            touch-action: none;
         }
         h2 {
             margin: 5px;
-            font-size: 18px;
+            font-size: 16px;
             text-shadow: 0 2px 4px rgba(0,0,0,0.8);
         }
         #scoreboard {
-            font-size: 20px;
+            font-size: 18px;
             font-weight: bold;
             margin-bottom: 5px;
             background: rgba(0,0,0,0.5);
-            padding: 5px 15px;
+            padding: 4px 12px;
             border-radius: 20px;
         }
         canvas {
-            border: 4px solid #444;
+            border: 3px solid #444;
             background: linear-gradient(to bottom, #1b5e20, #2e7d32);
             box-shadow: 0 10px 30px rgba(0,0,0,0.8);
             display: none;
             border-radius: 8px;
+            max-width: 100%;
+            height: auto;
         }
         .instructions {
-            font-size: 12px;
+            font-size: 11px;
             color: #ccc;
             margin-top: 5px;
             text-align: center;
             display: none;
         }
-        #menuScreen {
+        .menu-box {
             background: #222;
-            padding: 30px;
+            padding: 20px;
             border-radius: 12px;
             text-align: center;
             box-shadow: 0 0 20px rgba(0,0,0,0.9);
-            width: 420px;
+            width: 85%;
+            max-width: 380px;
             border: 2px solid #444;
+            margin-bottom: 10px;
         }
-        select, button {
-            padding: 10px;
-            font-size: 16px;
-            margin: 10px 0;
+        select, input, button {
+            padding: 12px;
+            font-size: 15px;
+            margin: 8px 0;
             width: 100%;
             border-radius: 6px;
             border: none;
-            cursor: pointer;
+            box-sizing: border-box;
         }
-        select {
+        select, input {
             background: #fff;
             color: #000;
         }
@@ -69,20 +77,105 @@
             background-color: #ff9800;
             color: white;
             font-weight: bold;
+            cursor: pointer;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
         button:hover {
             background-color: #f57c00;
         }
+        .btn-secondary {
+            background-color: #2196F3;
+        }
+        .btn-secondary:hover {
+            background-color: #1976D2;
+        }
+
+        /* Joystick & Controls */
+        #mobileControls {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            display: none;
+            justify-content: space-between;
+            padding: 0 30px;
+            box-sizing: border-box;
+            align-items: center;
+        }
+        #joystickBase {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            touch-action: none;
+        }
+        #joystickStick {
+            position: absolute;
+            top: 35px;
+            left: 35px;
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.5);
+            border: 2px solid #fff;
+            border-radius: 50%;
+            pointer-events: none;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+        }
+        #actionBtn {
+            width: 85px;
+            height: 85px;
+            background: rgba(255, 152, 0, 0.85);
+            border: 3px solid #fff;
+            border-radius: 50%;
+            color: white;
+            font-weight: bold;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            user-select: none;
+            cursor: pointer;
+            text-align: center;
+        }
+        #connectionStatus {
+            font-size: 12px;
+            color: #ffeb3b;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
 
-    <!-- ផ្ទាំងជ្រើសរើសតួនាទី -->
-    <div id="menuScreen">
-        <h2>⚽ ហ្គេមបាល់ទាត់ (អ្នកចាំទីការពារទីប្រាកដនិយម)</h2>
-        <p style="font-size: 13px; color: #aaa;">ជ្រើសរើសតួនាទីរបស់អ្នកដើម្បីលេង:</p>
+    <!-- ផ្ទាំងជ្រើសរើសរបៀបលេង (Menu Screen) -->
+    <div id="mainMenu" class="menu-box">
+        <h2>⚽ 3D Soccer Online P2P</h2>
+        <button onclick="showSoloSetup()" class="btn-secondary">លេងទោល (Solo / AI)</button>
+        <button onclick="showMultiMenu()">លេងជាមិត្តភ័ក្តិ (Online Multiplayer)</button>
+    </div>
+
+    <!-- ផ្ទាំង Online Setup (Create / Join Room) -->
+    <div id="multiMenu" class="menu-box" style="display:none;">
+        <h2>🌐 Online Multiplayer</h2>
+        <input type="text" id="roomNameInput" placeholder="បញ្ចូលឈ្មោះ Room (ឧ. match123)">
+        <button onclick="createRoom()">បង្កើត Room ថ្មី (Host)</button>
+        <button onclick="joinRoom()" class="btn-secondary">ចូល Room ដែលមានរួចហើយ (Join)</button>
+        <button onclick="backToMain()" style="background:#555;">ត្រឡប់ក្រោយ</button>
+        <div id="connectionStatus"></div>
+    </div>
+
+    <!-- ផ្ទាំងជ្រើសរើស ក្រុម និង តួនាទី -->
+    <div id="setupScreen" class="menu-box" style="display:none;">
+        <h2 id="setupTitle">ជ្រើសរើសក្រុម និង តួនាទី</h2>
         
+        <label style="font-size: 13px; color:#aaa; display:block; text-align:left;">ជ្រើសរើសក្រុម:</label>
+        <select id="teamSelect" onchange="updateRoleOptions()">
+            <option value="blue">ក្រុមខៀវ (Blue Team)</option>
+            <option value="red">ក្រុមក្រហម (Red Team)</option>
+        </select>
+
+        <label style="font-size: 13px; color:#aaa; display:block; text-align:left; margin-top:5px;">ជ្រើសរើសតួនាទី (Role):</label>
         <select id="roleSelect">
             <option value="1">លេខ 1 - Goalie (អ្នកចាំទី)</option>
             <option value="2">លេខ 2 - Defender (ខ្សែការពារឆ្វេង)</option>
@@ -92,16 +185,24 @@
             <option value="6" selected>លេខ 6 - Forward (ខ្សែប្រយុទ្ធ)</option>
         </select>
 
-        <button onclick="startGame()">ចាប់ផ្តើមលេង Match</button>
+        <button onclick="startActiveGame()">ចូលលេងហ្គេម (Play)</button>
     </div>
 
     <h2 id="gameTitle" style="display:none;">Soccer Championship</h2>
-    <div id="scoreboard" style="display:none;">ខៀវ (យើង) <span id="blueScore">0</span> - <span id="redScore">0</span> ក្រហម (សត្រូវ)</div>
+    <div id="scoreboard" style="display:none;">ខៀវ: <span id="blueScore">0</span> - <span id="redScore">0</span> :ក្រហម</div>
     
-    <canvas id="gameCanvas" width="500" height="700"></canvas>
+    <canvas id="gameCanvas" width="400" height="600"></canvas>
     
     <div id="gameInstructions" class="instructions">
-        បញ្ជា: <b>ឹ (W), ស (S), ប (A), ដ (D)</b> ឬ <b>ប៊ូតុងព្រួញ</b> | <b>Spacebar</b> (កាន់បាល់ = សុត/ទាត់ | អត់កាន់បាល់ = សុំបាល់ពីមិត្តរួមក្រុម)
+        អូស Joystick ខាងឆ្វេងដើម្បីដើរ | ចុចប៊ូតុងខាងស្ដាំដើម្បីសុត ឬសុំបាល់
+    </div>
+
+    <!-- ប៊ូតុងបញ្ជាលើទូរស័ព្ទ (Joystick & Action Button) -->
+    <div id="mobileControls">
+        <div id="joystickBase">
+            <div id="joystickStick"></div>
+        </div>
+        <div id="actionBtn">សុត /<br>សុំបាល់</div>
     </div>
 
 <script>
@@ -111,21 +212,29 @@ const ctx = canvas.getContext("2d");
 let blueScore = 0;
 let redScore = 0;
 let gameStarted = false;
-let selectedPlayerNumber = 6;
+
+// ការកំណត់ Online & PeerJS
+let peer = null;
+let conn = null;
+let isHost = false;
+let myTeam = 'blue';
+let myPlayerNumber = 6;
+let takenRoles = { blue: [], red: [] };
 
 const field = {
-    width: 500,
-    height: 700,
-    goalWidth: 140
+    width: 400,
+    height: 600,
+    goalWidth: 120
 };
 
 let ball = {
     x: field.width / 2,
     y: field.height / 2,
-    radius: 9,
+    radius: 8,
     vx: 0,
     vy: 0,
-    friction: 0.985
+    friction: 0.985,
+    bounce: -0.85 // កម្លាំងលោតបង្វិលត្រឡប់មកវិញ (Restitution)
 };
 
 let powerCharging = false;
@@ -133,25 +242,28 @@ let powerLevel = 0;
 let currentCarrier = null;
 let releaseCooldown = 0;
 
+let joystickData = { active: false, dirX: 0, dirY: 0, touchId: null };
+let keys = {};
+
 class Player {
     constructor(x, y, team, number, role) {
         this.x = x;
         this.y = y;
         this.startX = x;
         this.startY = y;
-        this.radius = 15;
+        this.radius = 14;
         this.team = team; 
         this.number = number; 
         this.role = role; 
         this.vx = 0;
         this.vy = 0;
-        this.baseSpeed = 0.9; 
+        this.baseSpeed = 1.0; 
         this.lastDirX = 0;
         this.lastDirY = (team === 'blue') ? -1 : 1;
     }
 
     get isControlled() {
-        return this.team === 'blue' && this.number === selectedPlayerNumber;
+        return this.team === myTeam && this.number === myPlayerNumber;
     }
 
     draw() {
@@ -204,24 +316,28 @@ class Player {
 
     update() {
         if (this.isControlled) {
-            this.vx = 0;
-            this.vy = 0;
             let currentSpeed = (currentCarrier === this) ? 1.0 : this.baseSpeed;
+            let moveX = 0, moveY = 0;
 
-            let isUp = keys['w'] || keys['ឹ'] || keys['keyw'] || keys['arrowup'];
-            let isDown = keys['s'] || keys['ស'] || keys['keys'] || keys['arrowdown'];
-            let isLeft = keys['a'] || keys['ប'] || keys['keya'] || keys['arrowleft'];
-            let isRight = keys['d'] || keys['ដ'] || keys['keyd'] || keys['arrowright'];
+            if (keys['w'] || keys['arrowup']) moveY = -1;
+            if (keys['s'] || keys['arrowdown']) moveY = 1;
+            if (keys['a'] || keys['arrowleft']) moveX = -1;
+            if (keys['d'] || keys['arrowright']) moveX = 1;
 
-            if (isUp) { this.vy = -currentSpeed; this.lastDirY = -1; this.lastDirX = 0; }
-            if (isDown) { this.vy = currentSpeed; this.lastDirY = 1; this.lastDirX = 0; }
-            if (isLeft) { this.vx = -currentSpeed; this.lastDirX = -1; this.lastDirY = 0; }
-            if (isRight) { this.vx = currentSpeed; this.lastDirX = 1; this.lastDirY = 0; }
+            if (joystickData.active) {
+                moveX = joystickData.dirX;
+                moveY = joystickData.dirY;
+            }
 
-            if (isUp && isLeft) { this.lastDirX = -0.7; this.lastDirY = -0.7; }
-            if (isUp && isRight) { this.lastDirX = 0.7; this.lastDirY = -0.7; }
-            if (isDown && isLeft) { this.lastDirX = -0.7; this.lastDirY = 0.7; }
-            if (isDown && isRight) { this.lastDirX = 0.7; this.lastDirY = 0.7; }
+            if (moveX !== 0 || moveY !== 0) {
+                this.vx = moveX * currentSpeed;
+                this.vy = moveY * currentSpeed;
+                this.lastDirX = moveX;
+                this.lastDirY = moveY;
+            } else {
+                this.vx = 0;
+                this.vy = 0;
+            }
 
             this.x += this.vx;
             this.y += this.vy;
@@ -235,14 +351,12 @@ class Player {
             let targetX = this.startX;
             let targetY = this.startY;
 
-            // ពិសេសសម្រាប់អ្នកចាំទី (Goalie - លេខ 1) ទាំងសងខាង គឺត្រូវឈរការពារមុខទីជានិច្ច
             if (this.role === 'Goalie') {
-                targetX = ball.x; // តាមមើលបាល់តាមបណ្តោយអ័ក្ស X មុខទី
+                targetX = ball.x; 
                 if (targetX < field.width / 2 - field.goalWidth / 2 + 10) targetX = field.width / 2 - field.goalWidth / 2 + 10;
                 if (targetX > field.width / 2 + field.goalWidth / 2 - 10) targetX = field.width / 2 + field.goalWidth / 2 - 10;
-                targetY = this.startY; // រក្សាកម្ពស់ឈរនៅមុខទីដដែល មិនរត់ចេញឆ្ងាយទេ
+                targetY = this.startY;
             } else {
-                // កីឡាករទូទៅ (Defender, Midfielder, Forward)
                 if (currentCarrier) {
                     if (this.team !== currentCarrier.team) {
                         targetX = currentCarrier.x;
@@ -263,7 +377,7 @@ class Player {
 
             if (dist > 1.5) {
                 let moveSpeed = (this.team === 'red') ? this.baseSpeed * 0.55 : this.baseSpeed * 0.45;
-                if (this.role === 'Goalie') moveSpeed = this.baseSpeed * 0.7; // ឱ្យអ្នកចាំទីរត់លឿនបន្តិចទាន់បាល់សុតមក
+                if (this.role === 'Goalie') moveSpeed = this.baseSpeed * 0.7;
                 this.x += (dx / dist) * moveSpeed;
                 this.y += (dy / dist) * moveSpeed;
             }
@@ -272,51 +386,249 @@ class Player {
 }
 
 let players = [
-    new Player(field.width / 2, 45, 'red', 1, 'Goalie'),
-    new Player(160, 160, 'red', 2, 'Defender'),
-    new Player(340, 160, 'red', 3, 'Defender'),
-    new Player(160, 270, 'red', 4, 'Midfielder'),
-    new Player(340, 270, 'red', 5, 'Midfielder'),
-    new Player(field.width / 2, 210, 'red', 6, 'Forward'),
+    new Player(field.width / 2, 40, 'red', 1, 'Goalie'),
+    new Player(130, 140, 'red', 2, 'Defender'),
+    new Player(270, 140, 'red', 3, 'Defender'),
+    new Player(130, 240, 'red', 4, 'Midfielder'),
+    new Player(270, 240, 'red', 5, 'Midfielder'),
+    new Player(field.width / 2, 190, 'red', 6, 'Forward'),
 
-    new Player(field.width / 2, field.height - 45, 'blue', 1, 'Goalie'),
-    new Player(160, field.height - 160, 'blue', 2, 'Defender'),
-    new Player(340, field.height - 160, 'blue', 3, 'Defender'),
-    new Player(160, field.height - 270, 'blue', 4, 'Midfielder'),
-    new Player(340, field.height - 270, 'blue', 5, 'Midfielder'),
-    new Player(field.width / 2, field.height - 210, 'blue', 6, 'Forward')
+    new Player(field.width / 2, field.height - 40, 'blue', 1, 'Goalie'),
+    new Player(130, field.height - 140, 'blue', 2, 'Defender'),
+    new Player(270, field.height - 140, 'blue', 3, 'Defender'),
+    new Player(130, field.height - 240, 'blue', 4, 'Midfielder'),
+    new Player(270, field.height - 240, 'blue', 5, 'Midfielder'),
+    new Player(field.width / 2, field.height - 190, 'blue', 6, 'Forward')
 ];
 
-let keys = {};
-window.addEventListener('keydown', (e) => {
-    let k = e.key.toLowerCase();
-    let code = e.code.toLowerCase();
-    keys[k] = true;
-    keys[code] = true;
-    keys[e.keyCode] = true;
+function showSoloSetup() {
+    document.getElementById("mainMenu").style.display = "none";
+    document.getElementById("setupScreen").style.display = "block";
+    isHost = true;
+    updateRoleOptions();
+}
 
-    if (e.code === 'Space' && gameStarted) {
-        players.forEach(player => {
-            if (player.isControlled) {
-                if (currentCarrier === player) {
-                    powerCharging = true; 
-                } else {
-                    requestPassToPlayer(player);
-                }
+function showMultiMenu() {
+    document.getElementById("mainMenu").style.display = "none";
+    document.getElementById("multiMenu").style.display = "block";
+}
+
+function backToMain() {
+    document.getElementById("multiMenu").style.display = "none";
+    document.getElementById("mainMenu").style.display = "block";
+}
+
+function createRoom() {
+    let roomName = document.getElementById("roomNameInput").value.trim();
+    if (!roomName) {
+        alert("សូមបញ្ចូលឈ្មោះ Room ជាមុនសិន!");
+        return;
+    }
+    document.getElementById("connectionStatus").innerText = "កំពុងបង្កើត Room...";
+    peer = new Peer("soccer_room_" + roomName);
+
+    peer.on('open', (id) => {
+        isHost = true;
+        document.getElementById("multiMenu").style.display = "none";
+        document.getElementById("setupScreen").style.display = "block";
+        updateRoleOptions();
+    });
+
+    peer.on('connection', (incomingConn) => {
+        conn = incomingConn;
+        setupConnection();
+    });
+
+    peer.on('error', (err) => {
+        alert("ឈ្មោះ Room នេះមានគេប្រើរួចហើយ ឬមានបញ្ហា Network!");
+        document.getElementById("connectionStatus").innerText = "";
+    });
+}
+
+function joinRoom() {
+    let roomName = document.getElementById("roomNameInput").value.trim();
+    if (!roomName) {
+        alert("សូមបញ្ចូលឈ្មោះ Room ដែលត្រូវចូល!");
+        return;
+    }
+    document.getElementById("connectionStatus").innerText = "កំពុងតភ្ជាប់ទៅ Room...";
+    peer = new Peer();
+
+    peer.on('open', (id) => {
+        isHost = false;
+        conn = peer.connect("soccer_room_" + roomName);
+        setupConnection();
+    });
+
+    peer.on('error', (err) => {
+        alert("រកមិនឃើញ Room នេះទេ សូមពិនិត្យឈ្មោះឡើងវិញ!");
+        document.getElementById("connectionStatus").innerText = "";
+    });
+}
+
+function setupConnection() {
+    conn.on('open', () => {
+        document.getElementById("multiMenu").style.display = "none";
+        document.getElementById("setupScreen").style.display = "block";
+        updateRoleOptions();
+    });
+
+    conn.on('data', (data) => {
+        if (data.type === 'SELECT_ROLE') {
+            takenRoles[data.team] = takenRoles[data.team] || [];
+            if (!takenRoles[data.team].includes(data.number)) {
+                takenRoles[data.team].push(data.number);
             }
-        });
-        e.preventDefault();
+            updateRoleOptions();
+        } else if (data.type === 'GAME_STATE' && !isHost) {
+            ball.x = data.ball.x;
+            ball.y = data.ball.y;
+            ball.vx = data.ball.vx;
+            ball.vy = data.ball.vy;
+            blueScore = data.blueScore;
+            redScore = data.redScore;
+            document.getElementById("blueScore").innerText = blueScore;
+            document.getElementById("redScore").innerText = redScore;
+            
+            for(let i=0; i<players.length; i++) {
+                players[i].x = data.players[i].x;
+                players[i].y = data.players[i].y;
+            }
+        }
+    });
+}
+
+function updateRoleOptions() {
+    let team = document.getElementById("teamSelect").value;
+    let roleSelect = document.getElementById("roleSelect");
+    
+    for (let option of roleSelect.options) {
+        let num = parseInt(option.value);
+        if (takenRoles[team] && takenRoles[team].includes(num)) {
+            option.disabled = true;
+            option.text += " (មានគេយកហើយ)";
+        } else {
+            option.disabled = false;
+            option.text = option.text.replace(" (មានគេយកហើយ)", "");
+        }
+    }
+}
+
+function startActiveGame() {
+    myTeam = document.getElementById("teamSelect").value;
+    myPlayerNumber = parseInt(document.getElementById("roleSelect").value);
+
+    if (conn && conn.open) {
+        conn.send({ type: 'SELECT_ROLE', team: myTeam, number: myPlayerNumber });
+    }
+
+    document.getElementById("setupScreen").style.display = "none";
+    document.getElementById("gameTitle").style.display = "block";
+    document.getElementById("scoreboard").style.display = "block";
+    document.getElementById("gameCanvas").style.display = "block";
+    document.getElementById("gameInstructions").style.display = "block";
+    document.getElementById("mobileControls").style.display = "flex";
+
+    gameStarted = true;
+}
+
+// Joystick Events
+const joystickBase = document.getElementById('joystickBase');
+const joystickStick = document.getElementById('joystickStick');
+
+function handleJoystickMove(clientX, clientY) {
+    let rect = joystickBase.getBoundingClientRect();
+    let centerX = rect.left + rect.width / 2;
+    let centerY = rect.top + rect.height / 2;
+    
+    let dx = clientX - centerX;
+    let dy = clientY - centerY;
+    let distance = Math.hypot(dx, dy);
+    let maxRadius = 40;
+
+    if (distance > maxRadius) {
+        dx = (dx / distance) * maxRadius;
+        dy = (dy / distance) * maxRadius;
+    }
+
+    joystickStick.style.transform = `translate(${dx}px, ${dy}px)`;
+    joystickData.active = true;
+    joystickData.dirX = dx / maxRadius;
+    joystickData.dirY = dy / maxRadius;
+}
+
+joystickBase.addEventListener('touchstart', (e) => {
+    let touch = e.targetTouches[0];
+    joystickData.touchId = touch.identifier;
+    handleJoystickMove(touch.clientX, touch.clientY);
+    e.preventDefault();
+}, { passive: false });
+
+window.addEventListener('touchmove', (e) => {
+    if (!joystickData.active) return;
+    for (let i = 0; i < e.targetTouches.length; i++) {
+        let touch = e.targetTouches[i];
+        if (touch.identifier === joystickData.touchId) {
+            handleJoystickMove(touch.clientX, touch.clientY);
+            break;
+        }
+    }
+    e.preventDefault();
+}, { passive: false });
+
+window.addEventListener('touchend', (e) => {
+    if (!joystickData.active) return;
+    let released = true;
+    for (let i = 0; i < e.targetTouches.length; i++) {
+        if (e.targetTouches[i].identifier === joystickData.touchId) {
+            released = false;
+            break;
+        }
+    }
+    if (released) resetJoystick();
+});
+
+joystickBase.addEventListener('mousedown', (e) => {
+    joystickData.active = true;
+    handleJoystickMove(e.clientX, e.clientY);
+});
+
+window.addEventListener('mousemove', (e) => {
+    if (joystickData.active && e.buttons === 1) {
+        handleJoystickMove(e.clientX, e.clientY);
     }
 });
 
-window.addEventListener('keyup', (e) => {
-    let k = e.key.toLowerCase();
-    let code = e.code.toLowerCase();
-    keys[k] = false;
-    keys[code] = false;
-    keys[e.keyCode] = false;
+window.addEventListener('mouseup', () => {
+    if (joystickData.active) resetJoystick();
+});
 
-    if (e.code === 'Space' && gameStarted && powerCharging) {
+function resetJoystick() {
+    joystickData.active = false;
+    joystickData.dirX = 0;
+    joystickData.dirY = 0;
+    joystickData.touchId = null;
+    joystickStick.style.transform = `translate(0px, 0px)`;
+}
+
+// Action Button (Shoot / Pass)
+let actionEl = document.getElementById('actionBtn');
+actionEl.addEventListener('touchstart', (e) => { if(gameStarted) triggerActionStart(); e.preventDefault(); });
+actionEl.addEventListener('touchend', (e) => { if(gameStarted) triggerActionEnd(); e.preventDefault(); });
+actionEl.addEventListener('mousedown', () => { if(gameStarted) triggerActionStart(); });
+actionEl.addEventListener('mouseup', () => { if(gameStarted) triggerActionEnd(); });
+
+function triggerActionStart() {
+    players.forEach(player => {
+        if (player.isControlled) {
+            if (currentCarrier === player) powerCharging = true;
+            else requestPassToPlayer(player);
+        }
+    });
+}
+
+function triggerActionEnd() {
+    if (powerCharging) {
         players.forEach(player => {
             if (player.isControlled && currentCarrier === player) {
                 let finalPower = Math.max(4.0, (powerLevel / 100) * 12);
@@ -331,9 +643,8 @@ window.addEventListener('keyup', (e) => {
         });
         powerCharging = false;
         powerLevel = 0;
-        e.preventDefault();
     }
-});
+}
 
 function requestPassToPlayer(receiver) {
     if (currentCarrier && currentCarrier.team === receiver.team && currentCarrier !== receiver) {
@@ -346,21 +657,8 @@ function requestPassToPlayer(receiver) {
     }
 }
 
-function startGame() {
-    selectedPlayerNumber = parseInt(document.getElementById("roleSelect").value);
-    
-    document.getElementById("menuScreen").style.display = "none";
-    document.getElementById("gameTitle").style.display = "block";
-    document.getElementById("scoreboard").style.display = "block";
-    document.getElementById("gameCanvas").style.display = "block";
-    document.getElementById("gameInstructions").style.display = "block";
-
-    gameStarted = true;
-}
-
 function drawField3D() {
     ctx.clearRect(0, 0, field.width, field.height);
-
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
     ctx.lineWidth = 3;
     
@@ -370,20 +668,20 @@ function drawField3D() {
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.arc(field.width / 2, field.height / 2, 65, 0, Math.PI * 2);
+    ctx.arc(field.width / 2, field.height / 2, 55, 0, Math.PI * 2);
     ctx.stroke();
 
     let goalLeft = (field.width - field.goalWidth) / 2;
     let goalRight = goalLeft + field.goalWidth;
 
     ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
-    ctx.fillRect(goalLeft, -10, field.goalWidth, 40);
+    ctx.fillRect(goalLeft, -10, field.goalWidth, 35);
     ctx.strokeStyle = '#fff';
-    ctx.strokeRect(goalLeft, 0, field.goalWidth, 30);
+    ctx.strokeRect(goalLeft, 0, field.goalWidth, 25);
 
     ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
-    ctx.fillRect(goalLeft, field.height - 30, field.goalWidth, 40);
-    ctx.strokeRect(goalLeft, field.height - 30, field.goalWidth, 30);
+    ctx.fillRect(goalLeft, field.height - 25, field.goalWidth, 35);
+    ctx.strokeRect(goalLeft, field.height - 25, field.goalWidth, 25);
 }
 
 let enemyActionTimer = 0;
@@ -391,100 +689,101 @@ let enemyActionTimer = 0;
 function updateGame() {
     if (!gameStarted) return;
 
-    if (releaseCooldown > 0) {
-        releaseCooldown--;
-    }
+    if (releaseCooldown > 0) releaseCooldown--;
 
     if (powerCharging) {
         powerLevel += 4;
         if (powerLevel > 100) powerLevel = 100;
     }
 
-    if (currentCarrier) {
-        ball.x = currentCarrier.x + currentCarrier.lastDirX * 16;
-        ball.y = currentCarrier.y + currentCarrier.lastDirY * 16; 
+    if (isHost) {
+        if (currentCarrier) {
+            ball.x = currentCarrier.x + currentCarrier.lastDirX * 16;
+            ball.y = currentCarrier.y + currentCarrier.lastDirY * 16; 
 
-        if (currentCarrier.team === 'red') {
-            enemyActionTimer++;
-            if (enemyActionTimer > 90) {
-                enemyActionTimer = 0;
-                currentCarrier = null;
-                releaseCooldown = 25;
-                ball.vx = (Math.random() - 0.5) * 4;
-                ball.vy = 5; 
-            }
-        }
-    } else {
-        ball.x += ball.vx;
-        ball.y += ball.vy;
-        
-        ball.vx *= ball.friction;
-        ball.vy *= ball.friction;
-
-        if (releaseCooldown === 0) {
-            players.forEach(player => {
-                let dist = Math.hypot(ball.x - player.x, ball.y - player.y);
-                if (dist < player.radius + ball.radius + 4) {
-                    currentCarrier = player;
-                    if (player.team === 'red') enemyActionTimer = 0;
+            if (currentCarrier.team === 'red') {
+                enemyActionTimer++;
+                if (enemyActionTimer > 90) {
+                    enemyActionTimer = 0;
+                    currentCarrier = null;
+                    releaseCooldown = 25;
+                    ball.vx = (Math.random() - 0.5) * 4;
+                    ball.vy = 5; 
                 }
-            });
-        }
-    }
+            }
+        } else {
+            ball.x += ball.vx;
+            ball.y += ball.vy;
+            ball.vx *= ball.friction;
+            ball.vy *= ball.friction;
 
-    players.forEach(p1 => {
-        players.forEach(p2 => {
-            if (p1.team !== p2.team) {
-                let dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-                if (dist < p1.radius + p2.radius) {
-                    if (currentCarrier === p1) {
-                        currentCarrier = p2; 
-                        releaseCooldown = 15;
-                    } else if (currentCarrier === p2) {
-                        currentCarrier = p1; 
-                        releaseCooldown = 15;
+            if (releaseCooldown === 0) {
+                players.forEach(player => {
+                    let dist = Math.hypot(ball.x - player.x, ball.y - player.y);
+                    if (dist < player.radius + ball.radius + 4) {
+                        currentCarrier = player;
+                        if (player.team === 'red') enemyActionTimer = 0;
                     }
-                }
+                });
             }
-        });
-    });
-
-    if (ball.x - ball.radius < 0) { ball.x = ball.radius; ball.vx *= -1; }
-    if (ball.x + ball.radius > field.width) { ball.x = field.width - ball.radius; ball.vx *= -1; }
-
-    let goalLeft = (field.width - field.goalWidth) / 2;
-    let goalRight = goalLeft + field.goalWidth;
-
-    if (ball.y - ball.radius < 0) {
-        if (ball.x > goalLeft && ball.x < goalRight) {
-            blueScore++;
-            document.getElementById("blueScore").innerText = blueScore;
-            resetBall();
-        } else {
-            ball.y = ball.radius;
-            ball.vy *= -1;
         }
-    }
 
-    if (ball.y + ball.radius > field.height) {
-        if (ball.x > goalLeft && ball.x < goalRight) {
-            redScore++;
-            document.getElementById("redScore").innerText = redScore;
-            resetBall();
-        } else {
-            ball.y = field.height - ball.radius;
-            ball.vy *= -1;
+        // --- កែសម្រួល៖ បាល់ប៉ះគែម ឬក្រៅទីលាន លោតត្រឡប់ចូលក្នុងវិញ ---
+        let goalLeft = (field.width - field.goalWidth) / 2;
+        let goalRight = goalLeft + field.goalWidth;
+
+        // ប៉ះគែមឆ្វេង
+        if (ball.x - ball.radius < 0) {
+            ball.x = ball.radius;
+            ball.vx *= ball.bounce;
+        }
+        // ប៉ះគែមស្ដាំ
+        if (ball.x + ball.radius > field.width) {
+            ball.x = field.width - ball.radius;
+            ball.vx *= ball.bounce;
+        }
+
+        // ប៉ះគែមខាងលើ (Top Boundary / Goal Check)
+        if (ball.y - ball.radius < 0) {
+            if (ball.x > goalLeft && ball.x < goalRight) {
+                blueScore++;
+                document.getElementById("blueScore").innerText = blueScore;
+                resetBall();
+            } else {
+                ball.y = ball.radius;
+                ball.vy *= ball.bounce; // លោតត្រឡប់ចូលក្នុងវិញ
+            }
+        }
+
+        // ប៉ះគែមខាងក្រោម (Bottom Boundary / Goal Check)
+        if (ball.y + ball.radius > field.height) {
+            if (ball.x > goalLeft && ball.x < goalRight) {
+                redScore++;
+                document.getElementById("redScore").innerText = redScore;
+                resetBall();
+            } else {
+                ball.y = field.height - ball.radius;
+                ball.vy *= ball.bounce; // លោតត្រឡប់ចូលក្នុងវិញ
+            }
+        }
+
+        if (conn && conn.open) {
+            conn.send({
+                type: 'GAME_STATE',
+                ball: { x: ball.x, y: ball.y, vx: ball.vx, vy: ball.vy },
+                blueScore: blueScore,
+                redScore: redScore,
+                players: players.map(p => ({ x: p.x, y: p.y }))
+            });
         }
     }
 
     players.forEach(player => {
         player.update();
-
-        if (releaseCooldown === 0 && !currentCarrier) {
+        if (!isHost && releaseCooldown === 0 && !currentCarrier) {
             let dist = Math.hypot(ball.x - player.x, ball.y - player.y);
             if (dist < player.radius + ball.radius + 2) {
                 currentCarrier = player;
-                if (player.team === 'red') enemyActionTimer = 0;
             }
         }
     });
