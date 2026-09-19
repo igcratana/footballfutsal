@@ -1,0 +1,539 @@
+version1 <!DOCTYPE html>
+<html lang="km">
+<head>
+    <meta charset="UTF-8">
+    <title>3D Arcade Soccer - Goalie AI Fix</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #111;
+            color: white;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        h2 {
+            margin: 5px;
+            font-size: 18px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+        #scoreboard {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            background: rgba(0,0,0,0.5);
+            padding: 5px 15px;
+            border-radius: 20px;
+        }
+        canvas {
+            border: 4px solid #444;
+            background: linear-gradient(to bottom, #1b5e20, #2e7d32);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            display: none;
+            border-radius: 8px;
+        }
+        .instructions {
+            font-size: 12px;
+            color: #ccc;
+            margin-top: 5px;
+            text-align: center;
+            display: none;
+        }
+        #menuScreen {
+            background: #222;
+            padding: 30px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 0 20px rgba(0,0,0,0.9);
+            width: 420px;
+            border: 2px solid #444;
+        }
+        select, button {
+            padding: 10px;
+            font-size: 16px;
+            margin: 10px 0;
+            width: 100%;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+        }
+        select {
+            background: #fff;
+            color: #000;
+        }
+        button {
+            background-color: #ff9800;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        button:hover {
+            background-color: #f57c00;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ផ្ទាំងជ្រើសរើសតួនាទី -->
+    <div id="menuScreen">
+        <h2>⚽ ហ្គេមបាល់ទាត់ (អ្នកចាំទីការពារទីប្រាកដនិយម)</h2>
+        <p style="font-size: 13px; color: #aaa;">ជ្រើសរើសតួនាទីរបស់អ្នកដើម្បីលេង:</p>
+        
+        <select id="roleSelect">
+            <option value="1">លេខ 1 - Goalie (អ្នកចាំទី)</option>
+            <option value="2">លេខ 2 - Defender (ខ្សែការពារឆ្វេង)</option>
+            <option value="3">លេខ 3 - Defender (ខ្សែការពារស្តាំ)</option>
+            <option value="4">លេខ 4 - Midfielder (ខ្សែបម្រើឆ្វេង)</option>
+            <option value="5">លេខ 5 - Midfielder (ខ្សែបម្រើស្តាំ)</option>
+            <option value="6" selected>លេខ 6 - Forward (ខ្សែប្រយុទ្ធ)</option>
+        </select>
+
+        <button onclick="startGame()">ចាប់ផ្តើមលេង Match</button>
+    </div>
+
+    <h2 id="gameTitle" style="display:none;">Soccer Championship</h2>
+    <div id="scoreboard" style="display:none;">ខៀវ (យើង) <span id="blueScore">0</span> - <span id="redScore">0</span> ក្រហម (សត្រូវ)</div>
+    
+    <canvas id="gameCanvas" width="500" height="700"></canvas>
+    
+    <div id="gameInstructions" class="instructions">
+        បញ្ជា: <b>ឹ (W), ស (S), ប (A), ដ (D)</b> ឬ <b>ប៊ូតុងព្រួញ</b> | <b>Spacebar</b> (កាន់បាល់ = សុត/ទាត់ | អត់កាន់បាល់ = សុំបាល់ពីមិត្តរួមក្រុម)
+    </div>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+let blueScore = 0;
+let redScore = 0;
+let gameStarted = false;
+let selectedPlayerNumber = 6;
+
+const field = {
+    width: 500,
+    height: 700,
+    goalWidth: 140
+};
+
+let ball = {
+    x: field.width / 2,
+    y: field.height / 2,
+    radius: 9,
+    vx: 0,
+    vy: 0,
+    friction: 0.985
+};
+
+let powerCharging = false;
+let powerLevel = 0;
+let currentCarrier = null;
+let releaseCooldown = 0;
+
+class Player {
+    constructor(x, y, team, number, role) {
+        this.x = x;
+        this.y = y;
+        this.startX = x;
+        this.startY = y;
+        this.radius = 15;
+        this.team = team; 
+        this.number = number; 
+        this.role = role; 
+        this.vx = 0;
+        this.vy = 0;
+        this.baseSpeed = 0.9; 
+        this.lastDirX = 0;
+        this.lastDirY = (team === 'blue') ? -1 : 1;
+    }
+
+    get isControlled() {
+        return this.team === 'blue' && this.number === selectedPlayerNumber;
+    }
+
+    draw() {
+        ctx.beginPath();
+        ctx.ellipse(this.x, this.y + 6, this.radius * 0.8, this.radius * 0.4, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+        ctx.fill();
+        ctx.closePath();
+
+        let grad = ctx.createRadialGradient(this.x - 4, this.y - 4, 2, this.x, this.y, this.radius);
+        if (this.team === 'blue') {
+            grad.addColorStop(0, '#64b5f6');
+            grad.addColorStop(1, '#1565c0');
+        } else {
+            grad.addColorStop(0, '#e57373');
+            grad.addColorStop(1, '#c62828');
+        }
+
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#fff';
+        ctx.stroke();
+        ctx.closePath();
+
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 11px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.number, this.x, this.y);
+
+        if (this.isControlled) {
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius + 5, 0, Math.PI * 2);
+            ctx.strokeStyle = '#ffeb3b';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+            ctx.closePath();
+
+            if (powerCharging && currentCarrier === this) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(this.x - 22, this.y - 32, 44, 6);
+                ctx.fillStyle = powerLevel > 70 ? '#f44336' : '#4CAF50';
+                ctx.fillRect(this.x - 22, this.y - 32, (powerLevel / 100) * 44, 6);
+            }
+        }
+    }
+
+    update() {
+        if (this.isControlled) {
+            this.vx = 0;
+            this.vy = 0;
+            let currentSpeed = (currentCarrier === this) ? 1.0 : this.baseSpeed;
+
+            let isUp = keys['w'] || keys['ឹ'] || keys['keyw'] || keys['arrowup'];
+            let isDown = keys['s'] || keys['ស'] || keys['keys'] || keys['arrowdown'];
+            let isLeft = keys['a'] || keys['ប'] || keys['keya'] || keys['arrowleft'];
+            let isRight = keys['d'] || keys['ដ'] || keys['keyd'] || keys['arrowright'];
+
+            if (isUp) { this.vy = -currentSpeed; this.lastDirY = -1; this.lastDirX = 0; }
+            if (isDown) { this.vy = currentSpeed; this.lastDirY = 1; this.lastDirX = 0; }
+            if (isLeft) { this.vx = -currentSpeed; this.lastDirX = -1; this.lastDirY = 0; }
+            if (isRight) { this.vx = currentSpeed; this.lastDirX = 1; this.lastDirY = 0; }
+
+            if (isUp && isLeft) { this.lastDirX = -0.7; this.lastDirY = -0.7; }
+            if (isUp && isRight) { this.lastDirX = 0.7; this.lastDirY = -0.7; }
+            if (isDown && isLeft) { this.lastDirX = -0.7; this.lastDirY = 0.7; }
+            if (isDown && isRight) { this.lastDirX = 0.7; this.lastDirY = 0.7; }
+
+            this.x += this.vx;
+            this.y += this.vy;
+
+            if (this.x < this.radius) this.x = this.radius;
+            if (this.x > field.width - this.radius) this.x = field.width - this.radius;
+            if (this.y < this.radius) this.y = this.radius;
+            if (this.y > field.height - this.radius) this.y = field.height - this.radius;
+        } 
+        else {
+            let targetX = this.startX;
+            let targetY = this.startY;
+
+            // ពិសេសសម្រាប់អ្នកចាំទី (Goalie - លេខ 1) ទាំងសងខាង គឺត្រូវឈរការពារមុខទីជានិច្ច
+            if (this.role === 'Goalie') {
+                targetX = ball.x; // តាមមើលបាល់តាមបណ្តោយអ័ក្ស X មុខទី
+                if (targetX < field.width / 2 - field.goalWidth / 2 + 10) targetX = field.width / 2 - field.goalWidth / 2 + 10;
+                if (targetX > field.width / 2 + field.goalWidth / 2 - 10) targetX = field.width / 2 + field.goalWidth / 2 - 10;
+                targetY = this.startY; // រក្សាកម្ពស់ឈរនៅមុខទីដដែល មិនរត់ចេញឆ្ងាយទេ
+            } else {
+                // កីឡាករទូទៅ (Defender, Midfielder, Forward)
+                if (currentCarrier) {
+                    if (this.team !== currentCarrier.team) {
+                        targetX = currentCarrier.x;
+                        targetY = currentCarrier.y;
+                    } else {
+                        targetX = this.startX + (ball.x - field.width / 2) * 0.1;
+                        targetY = this.startY;
+                    }
+                } else {
+                    targetX = ball.x;
+                    targetY = ball.y;
+                }
+            }
+
+            let dx = targetX - this.x;
+            let dy = targetY - this.y;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist > 1.5) {
+                let moveSpeed = (this.team === 'red') ? this.baseSpeed * 0.55 : this.baseSpeed * 0.45;
+                if (this.role === 'Goalie') moveSpeed = this.baseSpeed * 0.7; // ឱ្យអ្នកចាំទីរត់លឿនបន្តិចទាន់បាល់សុតមក
+                this.x += (dx / dist) * moveSpeed;
+                this.y += (dy / dist) * moveSpeed;
+            }
+        }
+    }
+}
+
+let players = [
+    new Player(field.width / 2, 45, 'red', 1, 'Goalie'),
+    new Player(160, 160, 'red', 2, 'Defender'),
+    new Player(340, 160, 'red', 3, 'Defender'),
+    new Player(160, 270, 'red', 4, 'Midfielder'),
+    new Player(340, 270, 'red', 5, 'Midfielder'),
+    new Player(field.width / 2, 210, 'red', 6, 'Forward'),
+
+    new Player(field.width / 2, field.height - 45, 'blue', 1, 'Goalie'),
+    new Player(160, field.height - 160, 'blue', 2, 'Defender'),
+    new Player(340, field.height - 160, 'blue', 3, 'Defender'),
+    new Player(160, field.height - 270, 'blue', 4, 'Midfielder'),
+    new Player(340, field.height - 270, 'blue', 5, 'Midfielder'),
+    new Player(field.width / 2, field.height - 210, 'blue', 6, 'Forward')
+];
+
+let keys = {};
+window.addEventListener('keydown', (e) => {
+    let k = e.key.toLowerCase();
+    let code = e.code.toLowerCase();
+    keys[k] = true;
+    keys[code] = true;
+    keys[e.keyCode] = true;
+
+    if (e.code === 'Space' && gameStarted) {
+        players.forEach(player => {
+            if (player.isControlled) {
+                if (currentCarrier === player) {
+                    powerCharging = true; 
+                } else {
+                    requestPassToPlayer(player);
+                }
+            }
+        });
+        e.preventDefault();
+    }
+});
+
+window.addEventListener('keyup', (e) => {
+    let k = e.key.toLowerCase();
+    let code = e.code.toLowerCase();
+    keys[k] = false;
+    keys[code] = false;
+    keys[e.keyCode] = false;
+
+    if (e.code === 'Space' && gameStarted && powerCharging) {
+        players.forEach(player => {
+            if (player.isControlled && currentCarrier === player) {
+                let finalPower = Math.max(4.0, (powerLevel / 100) * 12);
+                let dirX = player.lastDirX !== 0 ? player.lastDirX : 0;
+                let dirY = player.lastDirY !== 0 ? player.lastDirY : -1;
+
+                currentCarrier = null;
+                releaseCooldown = 25; 
+                ball.vx = dirX * finalPower;
+                ball.vy = dirY * finalPower;
+            }
+        });
+        powerCharging = false;
+        powerLevel = 0;
+        e.preventDefault();
+    }
+});
+
+function requestPassToPlayer(receiver) {
+    if (currentCarrier && currentCarrier.team === receiver.team && currentCarrier !== receiver) {
+        let passer = currentCarrier;
+        currentCarrier = null;
+        releaseCooldown = 25;
+        let angle = Math.atan2(receiver.y - passer.y, receiver.x - passer.x);
+        ball.vx = Math.cos(angle) * 6;
+        ball.vy = Math.sin(angle) * 6;
+    }
+}
+
+function startGame() {
+    selectedPlayerNumber = parseInt(document.getElementById("roleSelect").value);
+    
+    document.getElementById("menuScreen").style.display = "none";
+    document.getElementById("gameTitle").style.display = "block";
+    document.getElementById("scoreboard").style.display = "block";
+    document.getElementById("gameCanvas").style.display = "block";
+    document.getElementById("gameInstructions").style.display = "block";
+
+    gameStarted = true;
+}
+
+function drawField3D() {
+    ctx.clearRect(0, 0, field.width, field.height);
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.lineWidth = 3;
+    
+    ctx.beginPath();
+    ctx.moveTo(0, field.height / 2);
+    ctx.lineTo(field.width, field.height / 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(field.width / 2, field.height / 2, 65, 0, Math.PI * 2);
+    ctx.stroke();
+
+    let goalLeft = (field.width - field.goalWidth) / 2;
+    let goalRight = goalLeft + field.goalWidth;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+    ctx.fillRect(goalLeft, -10, field.goalWidth, 40);
+    ctx.strokeStyle = '#fff';
+    ctx.strokeRect(goalLeft, 0, field.goalWidth, 30);
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+    ctx.fillRect(goalLeft, field.height - 30, field.goalWidth, 40);
+    ctx.strokeRect(goalLeft, field.height - 30, field.goalWidth, 30);
+}
+
+let enemyActionTimer = 0;
+
+function updateGame() {
+    if (!gameStarted) return;
+
+    if (releaseCooldown > 0) {
+        releaseCooldown--;
+    }
+
+    if (powerCharging) {
+        powerLevel += 4;
+        if (powerLevel > 100) powerLevel = 100;
+    }
+
+    if (currentCarrier) {
+        ball.x = currentCarrier.x + currentCarrier.lastDirX * 16;
+        ball.y = currentCarrier.y + currentCarrier.lastDirY * 16; 
+
+        if (currentCarrier.team === 'red') {
+            enemyActionTimer++;
+            if (enemyActionTimer > 90) {
+                enemyActionTimer = 0;
+                currentCarrier = null;
+                releaseCooldown = 25;
+                ball.vx = (Math.random() - 0.5) * 4;
+                ball.vy = 5; 
+            }
+        }
+    } else {
+        ball.x += ball.vx;
+        ball.y += ball.vy;
+        
+        ball.vx *= ball.friction;
+        ball.vy *= ball.friction;
+
+        if (releaseCooldown === 0) {
+            players.forEach(player => {
+                let dist = Math.hypot(ball.x - player.x, ball.y - player.y);
+                if (dist < player.radius + ball.radius + 4) {
+                    currentCarrier = player;
+                    if (player.team === 'red') enemyActionTimer = 0;
+                }
+            });
+        }
+    }
+
+    players.forEach(p1 => {
+        players.forEach(p2 => {
+            if (p1.team !== p2.team) {
+                let dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+                if (dist < p1.radius + p2.radius) {
+                    if (currentCarrier === p1) {
+                        currentCarrier = p2; 
+                        releaseCooldown = 15;
+                    } else if (currentCarrier === p2) {
+                        currentCarrier = p1; 
+                        releaseCooldown = 15;
+                    }
+                }
+            }
+        });
+    });
+
+    if (ball.x - ball.radius < 0) { ball.x = ball.radius; ball.vx *= -1; }
+    if (ball.x + ball.radius > field.width) { ball.x = field.width - ball.radius; ball.vx *= -1; }
+
+    let goalLeft = (field.width - field.goalWidth) / 2;
+    let goalRight = goalLeft + field.goalWidth;
+
+    if (ball.y - ball.radius < 0) {
+        if (ball.x > goalLeft && ball.x < goalRight) {
+            blueScore++;
+            document.getElementById("blueScore").innerText = blueScore;
+            resetBall();
+        } else {
+            ball.y = ball.radius;
+            ball.vy *= -1;
+        }
+    }
+
+    if (ball.y + ball.radius > field.height) {
+        if (ball.x > goalLeft && ball.x < goalRight) {
+            redScore++;
+            document.getElementById("redScore").innerText = redScore;
+            resetBall();
+        } else {
+            ball.y = field.height - ball.radius;
+            ball.vy *= -1;
+        }
+    }
+
+    players.forEach(player => {
+        player.update();
+
+        if (releaseCooldown === 0 && !currentCarrier) {
+            let dist = Math.hypot(ball.x - player.x, ball.y - player.y);
+            if (dist < player.radius + ball.radius + 2) {
+                currentCarrier = player;
+                if (player.team === 'red') enemyActionTimer = 0;
+            }
+        }
+    });
+}
+
+function resetBall() {
+    ball.x = field.width / 2;
+    ball.y = field.height / 2;
+    ball.vx = 0;
+    ball.vy = 0;
+    currentCarrier = null;
+    powerCharging = false;
+    powerLevel = 0;
+    enemyActionTimer = 0;
+    releaseCooldown = 0;
+}
+
+function loop() {
+    if (gameStarted) {
+        drawField3D();
+        
+        ctx.beginPath();
+        ctx.ellipse(ball.x, ball.y + 4, ball.radius * 0.9, ball.radius * 0.45, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.fill();
+        ctx.closePath();
+
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+        let ballGrad = ctx.createRadialGradient(ball.x - 3, ball.y - 3, 2, ball.x, ball.y, ball.radius);
+        ballGrad.addColorStop(0, '#ffffff');
+        ballGrad.addColorStop(1, '#9e9e9e');
+        ctx.fillStyle = ballGrad;
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#333';
+        ctx.stroke();
+        ctx.closePath();
+
+        let sortedPlayers = [...players].sort((a, b) => a.y - b.y);
+        sortedPlayers.forEach(player => player.draw());
+
+        updateGame();
+    }
+    requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+
+</body>
+</html>
