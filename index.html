@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D Arcade Soccer - Online P2P & Bounce</title>
+    <title>3D Arcade Soccer - Esc to Pause</title>
     <!-- បញ្ចូល PeerJS Library សម្រាប់ Online Multiplayer -->
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <style>
@@ -25,23 +25,75 @@
             font-size: 16px;
             text-shadow: 0 2px 4px rgba(0,0,0,0.8);
         }
-        #scoreboard {
-            font-size: 18px;
-            font-weight: bold;
+        #topBar {
+            display: none;
+            width: 400px;
+            max-width: 100%;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 5px;
+            padding: 0 10px;
+            box-sizing: border-box;
+        }
+        #scoreboard {
+            font-size: 16px;
+            font-weight: bold;
             background: rgba(0,0,0,0.5);
             padding: 4px 12px;
             border-radius: 20px;
         }
+        #pauseBtnTop {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            font-size: 13px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            width: auto;
+            margin: 0;
+        }
+        #pauseBtnTop:hover {
+            background: #d32f2f;
+        }
+
+        #gameContainer {
+            position: relative;
+            display: none;
+            max-width: 100%;
+        }
+
         canvas {
             border: 3px solid #444;
             background: linear-gradient(to bottom, #1b5e20, #2e7d32);
             box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-            display: none;
+            display: block;
             border-radius: 8px;
             max-width: 100%;
             height: auto;
         }
+
+        /* ផ្ទាំង Pause រាងថ្លាជាងមុន ដើម្បីមើលឃើញសកម្មភាពខាងក្រោមច្បាស់ល្អ */
+        #pauseMenu {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(1px);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            z-index: 20;
+            box-sizing: border-box;
+            padding: 20px;
+        }
+
         .instructions {
             font-size: 11px;
             color: #ccc;
@@ -59,6 +111,7 @@
             max-width: 380px;
             border: 2px solid #444;
             margin-bottom: 10px;
+            z-index: 10;
         }
         select, input, button {
             padding: 12px;
@@ -186,18 +239,35 @@
         </select>
 
         <button onclick="startActiveGame()">ចូលលេងហ្គេម (Play)</button>
+        <button onclick="backToSetupMenu()" style="background:#555;">ត្រឡប់ក្រោយ</button>
     </div>
 
     <h2 id="gameTitle" style="display:none;">Soccer Championship</h2>
-    <div id="scoreboard" style="display:none;">ខៀវ: <span id="blueScore">0</span> - <span id="redScore">0</span> :ក្រហម</div>
     
-    <canvas id="gameCanvas" width="400" height="600"></canvas>
+    <div id="topBar">
+        <div id="scoreboard">ខៀវ: <span id="blueScore">0</span> - <span id="redScore">0</span> :ក្រហម</div>
+        <button id="pauseBtnTop" onclick="pauseGame()">Pause ⏸️</button>
+    </div>
+    
+    <!-- Container សម្រាប់ផ្ទុក Canvas និង Pause Menu ត្រួតគ្នា -->
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="400" height="600"></canvas>
+        
+        <!-- ផ្ទាំងផ្អាកហ្គេម (Pause Overlay) -->
+        <div id="pauseMenu">
+            <div class="menu-box" style="width: 90%; margin:0;">
+                <h2>⏸️ ហ្គេមកំពុងផ្អាក (Paused)</h2>
+                <button onclick="resumeGame()" class="btn-secondary">បន្តលេងវិញ (Resume)</button>
+                <button onclick="goToMainMenu()" style="background:#f44336;">ចាកចេញទៅ Menu ដើម</button>
+            </div>
+        </div>
+    </div>
     
     <div id="gameInstructions" class="instructions">
-        អូស Joystick ខាងឆ្វេងដើម្បីដើរ | ចុចប៊ូតុងខាងស្ដាំដើម្បីសុត ឬសុំបាល់
+        កុំព្យូទ័រ: WASD/Arrows ដើរ, Spacebar សុត, Esc ដើម្បី Pause | ទូរស័ព្ទ: អូស Joystick និងចុចប៊ូតុងស្តាំ
     </div>
 
-    <!-- ប៊ូតុងបញ្ជាលើទូរស័ព្ទ (Joystick & Action Button) -->
+    <!-- ប៊ូតុងបញ្ជាលើទូរស័ព្ទ -->
     <div id="mobileControls">
         <div id="joystickBase">
             <div id="joystickStick"></div>
@@ -212,8 +282,8 @@ const ctx = canvas.getContext("2d");
 let blueScore = 0;
 let redScore = 0;
 let gameStarted = false;
+let isPaused = false;
 
-// ការកំណត់ Online & PeerJS
 let peer = null;
 let conn = null;
 let isHost = false;
@@ -234,7 +304,7 @@ let ball = {
     vx: 0,
     vy: 0,
     friction: 0.985,
-    bounce: -0.85 // កម្លាំងលោតបង្វិលត្រឡប់មកវិញ (Restitution)
+    bounce: -0.85 
 };
 
 let powerCharging = false;
@@ -244,6 +314,34 @@ let releaseCooldown = 0;
 
 let joystickData = { active: false, dirX: 0, dirY: 0, touchId: null };
 let keys = {};
+
+window.addEventListener('keydown', (e) => {
+    keys[e.key.toLowerCase()] = true;
+    
+    // បន្ថែមមុខងារចុច Escape (Esc) ដើម្បី Pause / Resume
+    if (e.key === 'Escape' && gameStarted) {
+        if (isPaused) {
+            resumeGame();
+        } else {
+            pauseGame();
+        }
+        e.preventDefault();
+        return;
+    }
+
+    if (gameStarted && !isPaused && (e.key === ' ' || e.code === 'Space')) {
+        if (!powerCharging) triggerActionStart();
+        e.preventDefault();
+    }
+});
+
+window.addEventListener('keyup', (e) => {
+    keys[e.key.toLowerCase()] = false;
+    if (gameStarted && !isPaused && (e.key === ' ' || e.code === 'Space')) {
+        triggerActionEnd();
+        e.preventDefault();
+    }
+});
 
 class Player {
     constructor(x, y, team, number, role) {
@@ -351,23 +449,64 @@ class Player {
             let targetX = this.startX;
             let targetY = this.startY;
 
+            let isRed = (this.team === 'red');
+            let isBallInGoalArea = isRed ? (ball.y < 120) : (ball.y > field.height - 120);
+            let isBallInDefenseZone = isRed ? (ball.y < field.height * 0.45) : (ball.y > field.height * 0.55);
+
             if (this.role === 'Goalie') {
-                targetX = ball.x; 
-                if (targetX < field.width / 2 - field.goalWidth / 2 + 10) targetX = field.width / 2 - field.goalWidth / 2 + 10;
-                if (targetX > field.width / 2 + field.goalWidth / 2 - 10) targetX = field.width / 2 + field.goalWidth / 2 - 10;
-                targetY = this.startY;
-            } else {
-                if (currentCarrier) {
-                    if (this.team !== currentCarrier.team) {
-                        targetX = currentCarrier.x;
-                        targetY = currentCarrier.y;
-                    } else {
-                        targetX = this.startX + (ball.x - field.width / 2) * 0.1;
-                        targetY = this.startY;
-                    }
-                } else {
+                if (isBallInGoalArea) {
                     targetX = ball.x;
                     targetY = ball.y;
+                    if (isRed) {
+                        if (targetY < 20) targetY = 20;
+                        if (targetY > 100) targetY = 100;
+                    } else {
+                        if (targetY < field.height - 100) targetY = field.height - 100;
+                        if (targetY > field.height - 20) targetY = field.height - 20;
+                    }
+                } else {
+                    targetX = ball.x * 0.3 + field.width * 0.35;
+                    if (targetX < field.width / 2 - field.goalWidth / 2 + 10) targetX = field.width / 2 - field.goalWidth / 2 + 10;
+                    if (targetX > field.width / 2 + field.goalWidth / 2 - 10) targetX = field.width / 2 + field.goalWidth / 2 - 10;
+                    targetY = this.startY;
+                }
+            } else if (this.role === 'Defender') {
+                if (isBallInDefenseZone) {
+                    targetX = ball.x;
+                    targetY = ball.y;
+                } else {
+                    targetX = this.startX + (ball.x - field.width / 2) * 0.2;
+                    targetY = this.startY;
+                }
+            } else {
+                if (currentCarrier && currentCarrier.team === this.team) {
+                    if (currentCarrier !== this) {
+                        let sideOffset = (this.number % 2 === 0) ? -80 : 80;
+                        targetX = currentCarrier.x + sideOffset;
+                        targetY = currentCarrier.y + (isRed ? 60 : -60);
+
+                        if (targetX < 40) targetX = 40;
+                        if (targetX > field.width - 40) targetX = field.width - 40;
+                        if (targetY < 40) targetY = 40;
+                        if (targetY > field.height - 40) targetY = field.height - 40;
+                    }
+                } else {
+                    let teamChasers = players.filter(p => p.team === this.team && p.role !== 'Goalie' && p.role !== 'Defender');
+                    if (teamChasers.length > 0) {
+                        let closestTeammate = teamChasers.reduce((prev, curr) => {
+                            let dPrev = Math.hypot(prev.x - ball.x, prev.y - ball.y);
+                            let dCurr = Math.hypot(curr.x - ball.x, curr.y - ball.y);
+                            return dCurr < dPrev ? curr : prev;
+                        });
+
+                        if (this === closestTeammate) {
+                            targetX = ball.x;
+                            targetY = ball.y;
+                        } else {
+                            targetX = this.startX;
+                            targetY = this.startY;
+                        }
+                    }
                 }
             }
 
@@ -377,7 +516,9 @@ class Player {
 
             if (dist > 1.5) {
                 let moveSpeed = (this.team === 'red') ? this.baseSpeed * 0.55 : this.baseSpeed * 0.45;
-                if (this.role === 'Goalie') moveSpeed = this.baseSpeed * 0.7;
+                if (this.role === 'Goalie') {
+                    moveSpeed = this.baseSpeed * 0.75;
+                }
                 this.x += (dx / dist) * moveSpeed;
                 this.y += (dy / dist) * moveSpeed;
             }
@@ -416,6 +557,15 @@ function showMultiMenu() {
 function backToMain() {
     document.getElementById("multiMenu").style.display = "none";
     document.getElementById("mainMenu").style.display = "block";
+}
+
+function backToSetupMenu() {
+    document.getElementById("setupScreen").style.display = "none";
+    if (peer || conn) {
+        document.getElementById("multiMenu").style.display = "block";
+    } else {
+        document.getElementById("mainMenu").style.display = "block";
+    }
 }
 
 function createRoom() {
@@ -524,15 +674,48 @@ function startActiveGame() {
 
     document.getElementById("setupScreen").style.display = "none";
     document.getElementById("gameTitle").style.display = "block";
-    document.getElementById("scoreboard").style.display = "block";
-    document.getElementById("gameCanvas").style.display = "block";
+    document.getElementById("topBar").style.display = "flex";
+    document.getElementById("gameContainer").style.display = "block";
     document.getElementById("gameInstructions").style.display = "block";
     document.getElementById("mobileControls").style.display = "flex";
 
     gameStarted = true;
+    isPaused = false;
+    document.getElementById("pauseMenu").style.display = "none";
 }
 
-// Joystick Events
+function pauseGame() {
+    isPaused = true;
+    document.getElementById("pauseMenu").style.display = "flex";
+}
+
+function resumeGame() {
+    isPaused = false;
+    document.getElementById("pauseMenu").style.display = "none";
+}
+
+function goToMainMenu() {
+    isPaused = false;
+    gameStarted = false;
+    document.getElementById("pauseMenu").style.display = "none";
+    document.getElementById("gameTitle").style.display = "none";
+    document.getElementById("topBar").style.display = "none";
+    document.getElementById("gameContainer").style.display = "none";
+    document.getElementById("gameInstructions").style.display = "none";
+    document.getElementById("mobileControls").style.display = "none";
+    document.getElementById("mainMenu").style.display = "block";
+
+    if (peer) {
+        peer.destroy();
+        peer = null;
+        conn = null;
+    }
+    resetBall();
+    blueScore = 0;
+    redScore = 0;
+    takenRoles = { blue: [], red: [] };
+}
+
 const joystickBase = document.getElementById('joystickBase');
 const joystickStick = document.getElementById('joystickStick');
 
@@ -611,12 +794,11 @@ function resetJoystick() {
     joystickStick.style.transform = `translate(0px, 0px)`;
 }
 
-// Action Button (Shoot / Pass)
 let actionEl = document.getElementById('actionBtn');
-actionEl.addEventListener('touchstart', (e) => { if(gameStarted) triggerActionStart(); e.preventDefault(); });
-actionEl.addEventListener('touchend', (e) => { if(gameStarted) triggerActionEnd(); e.preventDefault(); });
-actionEl.addEventListener('mousedown', () => { if(gameStarted) triggerActionStart(); });
-actionEl.addEventListener('mouseup', () => { if(gameStarted) triggerActionEnd(); });
+actionEl.addEventListener('touchstart', (e) => { if(gameStarted && !isPaused) triggerActionStart(); e.preventDefault(); });
+actionEl.addEventListener('touchend', (e) => { if(gameStarted && !isPaused) triggerActionEnd(); e.preventDefault(); });
+actionEl.addEventListener('mousedown', () => { if(gameStarted && !isPaused) triggerActionStart(); });
+actionEl.addEventListener('mouseup', () => { if(gameStarted && !isPaused) triggerActionEnd(); });
 
 function triggerActionStart() {
     players.forEach(player => {
@@ -686,8 +868,40 @@ function drawField3D() {
 
 let enemyActionTimer = 0;
 
+function resolvePlayerCollisions() {
+    for (let i = 0; i < players.length; i++) {
+        for (let j = i + 1; j < players.length; j++) {
+            let p1 = players[i];
+            let p2 = players[j];
+            let dx = p2.x - p1.x;
+            let dy = p2.y - p1.y;
+            let dist = Math.hypot(dx, dy);
+            let minDist = p1.radius + p2.radius;
+
+            if (dist < minDist && dist > 0) {
+                let overlap = minDist - dist;
+                let nx = dx / dist;
+                let ny = dy / dist;
+
+                if (p1.isControlled) {
+                    p2.x += nx * overlap;
+                    p2.y += ny * overlap;
+                } else if (p2.isControlled) {
+                    p1.x -= nx * overlap;
+                    p1.y -= ny * overlap;
+                } else {
+                    p1.x -= nx * (overlap / 2);
+                    p1.y -= ny * (overlap / 2);
+                    p2.x += nx * (overlap / 2);
+                    p2.y += ny * (overlap / 2);
+                }
+            }
+        }
+    }
+}
+
 function updateGame() {
-    if (!gameStarted) return;
+    if (!gameStarted || isPaused) return;
 
     if (releaseCooldown > 0) releaseCooldown--;
 
@@ -728,22 +942,18 @@ function updateGame() {
             }
         }
 
-        // --- កែសម្រួល៖ បាល់ប៉ះគែម ឬក្រៅទីលាន លោតត្រឡប់ចូលក្នុងវិញ ---
         let goalLeft = (field.width - field.goalWidth) / 2;
         let goalRight = goalLeft + field.goalWidth;
 
-        // ប៉ះគែមឆ្វេង
         if (ball.x - ball.radius < 0) {
             ball.x = ball.radius;
             ball.vx *= ball.bounce;
         }
-        // ប៉ះគែមស្ដាំ
         if (ball.x + ball.radius > field.width) {
             ball.x = field.width - ball.radius;
             ball.vx *= ball.bounce;
         }
 
-        // ប៉ះគែមខាងលើ (Top Boundary / Goal Check)
         if (ball.y - ball.radius < 0) {
             if (ball.x > goalLeft && ball.x < goalRight) {
                 blueScore++;
@@ -751,11 +961,10 @@ function updateGame() {
                 resetBall();
             } else {
                 ball.y = ball.radius;
-                ball.vy *= ball.bounce; // លោតត្រឡប់ចូលក្នុងវិញ
+                ball.vy *= ball.bounce;
             }
         }
 
-        // ប៉ះគែមខាងក្រោម (Bottom Boundary / Goal Check)
         if (ball.y + ball.radius > field.height) {
             if (ball.x > goalLeft && ball.x < goalRight) {
                 redScore++;
@@ -763,7 +972,7 @@ function updateGame() {
                 resetBall();
             } else {
                 ball.y = field.height - ball.radius;
-                ball.vy *= ball.bounce; // លោតត្រឡប់ចូលក្នុងវិញ
+                ball.vy *= ball.bounce;
             }
         }
 
@@ -787,6 +996,8 @@ function updateGame() {
             }
         }
     });
+
+    resolvePlayerCollisions();
 }
 
 function resetBall() {
