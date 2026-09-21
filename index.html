@@ -75,7 +75,6 @@
             height: auto;
         }
 
-        /* ផ្ទាំង Pause រាងថ្លាជាងមុន ដើម្បីមើលឃើញសកម្មភាពខាងក្រោមច្បាស់ល្អ */
         #pauseMenu {
             position: absolute;
             top: 0;
@@ -143,7 +142,6 @@
             background-color: #1976D2;
         }
 
-        /* Joystick & Controls */
         #mobileControls {
             position: absolute;
             bottom: 20px;
@@ -201,14 +199,12 @@
 </head>
 <body>
 
-    <!-- ផ្ទាំងជ្រើសរើសរបៀបលេង (Menu Screen) -->
     <div id="mainMenu" class="menu-box">
         <h2>⚽ 3D Soccer Online P2P</h2>
         <button onclick="showSoloSetup()" class="btn-secondary">លេងទោល (Solo / AI)</button>
         <button onclick="showMultiMenu()">លេងជាមិត្តភ័ក្តិ (Online Multiplayer)</button>
     </div>
 
-    <!-- ផ្ទាំង Online Setup (Create / Join Room) -->
     <div id="multiMenu" class="menu-box" style="display:none;">
         <h2>🌐 Online Multiplayer</h2>
         <input type="text" id="roomNameInput" placeholder="បញ្ចូលឈ្មោះ Room (ឧ. match123)">
@@ -218,7 +214,6 @@
         <div id="connectionStatus"></div>
     </div>
 
-    <!-- ផ្ទាំងជ្រើសរើស ក្រុម និង តួនាទី -->
     <div id="setupScreen" class="menu-box" style="display:none;">
         <h2 id="setupTitle">ជ្រើសរើសក្រុម និង តួនាទី</h2>
         
@@ -249,11 +244,9 @@
         <button id="pauseBtnTop" onclick="pauseGame()">Pause ⏸️</button>
     </div>
     
-    <!-- Container សម្រាប់ផ្ទុក Canvas និង Pause Menu ត្រួតគ្នា -->
     <div id="gameContainer">
         <canvas id="gameCanvas" width="400" height="600"></canvas>
         
-        <!-- ផ្ទាំងផ្អាកហ្គេម (Pause Overlay) -->
         <div id="pauseMenu">
             <div class="menu-box" style="width: 90%; margin:0;">
                 <h2>⏸️ ហ្គេមកំពុងផ្អាក (Paused)</h2>
@@ -264,15 +257,14 @@
     </div>
     
     <div id="gameInstructions" class="instructions">
-        កុំព្យូទ័រ: WASD/Arrows ដើរ, Spacebar សុត, Esc ដើម្បី Pause | ទូរស័ព្ទ: អូស Joystick និងចុចប៊ូតុងស្តាំ
+        កុំព្យូទ័រ: WASD/Arrows ដើរ, Spacebar សុត/ចាប់បាល់, Esc ដើម្បី Pause
     </div>
 
-    <!-- ប៊ូតុងបញ្ជាលើទូរស័ព្ទ -->
     <div id="mobileControls">
         <div id="joystickBase">
             <div id="joystickStick"></div>
         </div>
-        <div id="actionBtn">សុត /<br>សុំបាល់</div>
+        <div id="actionBtn">ចាប់បាល់ /<br>សុត</div>
     </div>
 
 <script>
@@ -318,7 +310,6 @@ let keys = {};
 window.addEventListener('keydown', (e) => {
     keys[e.key.toLowerCase()] = true;
     
-    // បន្ថែមមុខងារចុច Escape (Esc) ដើម្បី Pause / Resume
     if (e.key === 'Escape' && gameStarted) {
         if (isPaused) {
             resumeGame();
@@ -620,6 +611,9 @@ function setupConnection() {
     conn.on('open', () => {
         document.getElementById("multiMenu").style.display = "none";
         document.getElementById("setupScreen").style.display = "block";
+        if (isHost) {
+            conn.send({ type: 'SYNC_ROLES', takenRoles: takenRoles });
+        }
         updateRoleOptions();
     });
 
@@ -630,7 +624,15 @@ function setupConnection() {
                 takenRoles[data.team].push(data.number);
             }
             updateRoleOptions();
-        } else if (data.type === 'GAME_STATE' && !isHost) {
+            if (isHost) {
+                conn.send({ type: 'SYNC_ROLES', takenRoles: takenRoles });
+            }
+        } 
+        else if (data.type === 'SYNC_ROLES') {
+            takenRoles = data.takenRoles;
+            updateRoleOptions();
+        }
+        else if (data.type === 'GAME_STATE' && !isHost) {
             ball.x = data.ball.x;
             ball.y = data.ball.y;
             ball.vx = data.ball.vx;
@@ -641,8 +643,19 @@ function setupConnection() {
             document.getElementById("redScore").innerText = redScore;
             
             for(let i=0; i<players.length; i++) {
-                players[i].x = data.players[i].x;
-                players[i].y = data.players[i].y;
+                if (!(players[i].team === myTeam && players[i].number === myPlayerNumber)) {
+                    players[i].x = data.players[i].x;
+                    players[i].y = data.players[i].y;
+                }
+            }
+        }
+        else if (data.type === 'CLIENT_MOVE' && isHost) {
+            let p = players.find(pl => pl.team === data.team && pl.number === data.number);
+            if (p) {
+                p.x = data.x;
+                p.y = data.y;
+                p.lastDirX = data.lastDirX;
+                p.lastDirY = data.lastDirY;
             }
         }
     });
@@ -656,7 +669,9 @@ function updateRoleOptions() {
         let num = parseInt(option.value);
         if (takenRoles[team] && takenRoles[team].includes(num)) {
             option.disabled = true;
-            option.text += " (មានគេយកហើយ)";
+            if (!option.text.includes("(មានគេយកហើយ)")) {
+                option.text += " (មានគេយកហើយ)";
+            }
         } else {
             option.disabled = false;
             option.text = option.text.replace(" (មានគេយកហើយ)", "");
@@ -667,6 +682,11 @@ function updateRoleOptions() {
 function startActiveGame() {
     myTeam = document.getElementById("teamSelect").value;
     myPlayerNumber = parseInt(document.getElementById("roleSelect").value);
+
+    takenRoles[myTeam] = takenRoles[myTeam] || [];
+    if (!takenRoles[myTeam].includes(myPlayerNumber)) {
+        takenRoles[myTeam].push(myPlayerNumber);
+    }
 
     if (conn && conn.open) {
         conn.send({ type: 'SELECT_ROLE', team: myTeam, number: myPlayerNumber });
@@ -801,15 +821,26 @@ actionEl.addEventListener('mousedown', () => { if(gameStarted && !isPaused) trig
 actionEl.addEventListener('mouseup', () => { if(gameStarted && !isPaused) triggerActionEnd(); });
 
 function triggerActionStart() {
+    if (!isHost) return;
+    
     players.forEach(player => {
         if (player.isControlled) {
-            if (currentCarrier === player) powerCharging = true;
-            else requestPassToPlayer(player);
+            if (currentCarrier === player) {
+                powerCharging = true;
+            } else {
+                let distToBall = Math.hypot(ball.x - player.x, ball.y - player.y);
+                if (distToBall < player.radius + ball.radius + 20) {
+                    currentCarrier = player;
+                    releaseCooldown = 20;
+                }
+            }
         }
     });
 }
 
 function triggerActionEnd() {
+    if (!isHost) return;
+
     if (powerCharging) {
         players.forEach(player => {
             if (player.isControlled && currentCarrier === player) {
@@ -825,17 +856,6 @@ function triggerActionEnd() {
         });
         powerCharging = false;
         powerLevel = 0;
-    }
-}
-
-function requestPassToPlayer(receiver) {
-    if (currentCarrier && currentCarrier.team === receiver.team && currentCarrier !== receiver) {
-        let passer = currentCarrier;
-        currentCarrier = null;
-        releaseCooldown = 25;
-        let angle = Math.atan2(receiver.y - passer.y, receiver.x - passer.x);
-        ball.vx = Math.cos(angle) * 6;
-        ball.vy = Math.sin(angle) * 6;
     }
 }
 
@@ -883,18 +903,10 @@ function resolvePlayerCollisions() {
                 let nx = dx / dist;
                 let ny = dy / dist;
 
-                if (p1.isControlled) {
-                    p2.x += nx * overlap;
-                    p2.y += ny * overlap;
-                } else if (p2.isControlled) {
-                    p1.x -= nx * overlap;
-                    p1.y -= ny * overlap;
-                } else {
-                    p1.x -= nx * (overlap / 2);
-                    p1.y -= ny * (overlap / 2);
-                    p2.x += nx * (overlap / 2);
-                    p2.y += ny * (overlap / 2);
-                }
+                p1.x -= nx * (overlap * 0.5);
+                p1.y -= ny * (overlap * 0.5);
+                p2.x += nx * (overlap * 0.5);
+                p2.y += ny * (overlap * 0.5);
             }
         }
     }
@@ -931,12 +943,45 @@ function updateGame() {
             ball.vx *= ball.friction;
             ball.vy *= ball.friction;
 
+            // កូដថ្មី៖ បុកទង្គិចបាល់ជាមួយកីឡាករគ្រប់រូបភាព ទោះទាត់ខ្លាំងប៉ុណ្ណាក៏មិនអាចធ្លុះឆ្លងកាត់បានដែរ
+            players.forEach(player => {
+                let dist = Math.hypot(ball.x - player.x, ball.y - player.y);
+                let minDist = player.radius + ball.radius;
+
+                if (dist < minDist) {
+                    // ប្រសិនបើកីឡាករនោះកំពុងចុចប៊ូតុងដើម្បីចាប់យកបាល់ (ហើយស្ថិតក្នុងពេលអាចចាប់បាន)
+                    if (releaseCooldown === 0 && player.isControlled && (keys[' '] || keys['space'] || joystickData.isActionPressed)) {
+                        currentCarrier = player;
+                    } 
+                    else if (releaseCooldown === 0 && player.team === 'red') {
+                        currentCarrier = player;
+                        enemyActionTimer = 0;
+                    } 
+                    else {
+                        // បើមិនចាប់យកទេ បាល់នឹងលោតផ្លាតចេញពីខ្លួនកីឡាករនោះភ្លាម (មិនឱ្យធ្លុះឆ្លងកាត់ដាច់ខាត)
+                        let nx = (ball.x - player.x) / (dist || 1);
+                        let ny = (ball.y - player.y) / (dist || 1);
+                        ball.x = player.x + nx * minDist;
+                        ball.y = player.y + ny * minDist;
+                        
+                        // បញ្ច្រាសល្បឿនបាល់ និងបំបាត់កម្លាំងបន្តិចដើម្បីឱ្យស្ទុះចេញមកវិញធម្មជាតិ
+                        let dot = ball.vx * nx + ball.vy * ny;
+                        ball.vx = (ball.vx - 2 * dot * nx) * 0.7;
+                        ball.vy = (ball.vy - 2 * dot * ny) * 0.7;
+                    }
+                }
+            });
+
             if (releaseCooldown === 0) {
                 players.forEach(player => {
                     let dist = Math.hypot(ball.x - player.x, ball.y - player.y);
                     if (dist < player.radius + ball.radius + 4) {
-                        currentCarrier = player;
-                        if (player.team === 'red') enemyActionTimer = 0;
+                        if (player.isControlled && (keys[' '] || keys['space'])) {
+                            currentCarrier = player;
+                        } else if (player.team === 'red') {
+                            currentCarrier = player;
+                            enemyActionTimer = 0;
+                        }
                     }
                 });
             }
@@ -989,15 +1034,25 @@ function updateGame() {
 
     players.forEach(player => {
         player.update();
-        if (!isHost && releaseCooldown === 0 && !currentCarrier) {
-            let dist = Math.hypot(ball.x - player.x, ball.y - player.y);
-            if (dist < player.radius + ball.radius + 2) {
-                currentCarrier = player;
-            }
-        }
     });
 
     resolvePlayerCollisions();
+
+    if (!isHost && conn && conn.open) {
+        players.forEach(player => {
+            if (player.isControlled) {
+                conn.send({
+                    type: 'CLIENT_MOVE',
+                    team: myTeam,
+                    number: myPlayerNumber,
+                    x: player.x,
+                    y: player.y,
+                    lastDirX: player.lastDirX,
+                    lastDirY: player.lastDirY
+                });
+            }
+        });
+    }
 }
 
 function resetBall() {
